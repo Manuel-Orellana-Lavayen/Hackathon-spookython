@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apocalipsis Manta | Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark; --bg: #0f172a; --panel: #020617; --panel-soft: #111827;
+      --border: #293548; --muted: #94a3b8; --cyan: #22d3ee; --green: #4ade80;
+      --red: #f87171; --yellow: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: #f1f5f9; font-family: Inter, sans-serif; min-height: 100vh; }
+
+    input, select, button { font: inherit; }
+    button { background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 9px; padding: 10px 13px; cursor: pointer; font-weight: 600; transition: background .15s; }
+    button:hover { background: #334155; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    input, select { width: 100%; background: #0f172a; color: #f8fafc; border: 1px solid #334155; border-radius: 8px; padding: 10px 11px; }
+    label { color: #cbd5e1; font-size: .88rem; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 8px; font-size: clamp(1.7rem, 3vw, 2.5rem); }
+    h2 { font-size: 1.15rem; margin-bottom: 6px; }
+    h3 { font-size: 1rem; margin-bottom: 15px; }
+
+    .dashboard { max-width: 1500px; width: calc(100% - 36px); margin: 0 auto; padding: 28px 0 36px; display: flex; flex-direction: column; gap: 22px; }
+    .header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 27px 30px; background: linear-gradient(120deg, #020617, #111827); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 18px 45px #0002; }
+    .eyebrow { color: var(--cyan); font-size: .76rem; font-weight: 800; letter-spacing: .13em; margin-bottom: 10px; }
+    .subtitle { color: var(--muted); margin: 0; line-height: 1.6; }
+    .status-card { min-width: 205px; background: #0b1220; border: 1px solid #334155; border-radius: 12px; padding: 16px 18px; }
+    .status-card .small { color: var(--muted); font-size: .72rem; letter-spacing: .08em; }
+    #lbl-estado { margin: 10px 0 0; font-size: .88rem; font-weight: 600; }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .panel, .metric { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 25px #0001; }
+    .metric { padding: 19px 20px; }
+    .metric-label { font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
+    .metric-value { margin: 10px 0 4px; font-size: clamp(1.25rem, 2.2vw, 1.9rem); font-weight: 800; overflow-wrap: anywhere; }
+    .metric-note { color: var(--muted); font-size: .78rem; }
+    .cyan { color: var(--cyan); } .green { color: var(--green); } .red { color: var(--red); } .yellow { color: var(--yellow); }
+    .section-heading { margin-bottom: 14px; }
+    .section-heading p { color: var(--muted); margin-bottom: 0; font-size: .9rem; line-height: 1.5; }
+
+    .map-layout { display: grid; grid-template-columns: minmax(0, 4fr) minmax(245px, 1fr); gap: 16px; align-items: stretch; }
+    .map-card { overflow: hidden; min-width: 0; padding: 0; display: flex; flex-direction: column; }
+    .side-panels { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+    .legend-list { display: flex; flex-direction: column; gap: 13px; }
+    .legend-row { display: flex; align-items: center; gap: 10px; color: #cbd5e1; font-size: .86rem; }
+    .legend-symbol { width: 28px; height: 28px; display: grid; place-items: center; flex: 0 0 28px; }
+    .legend-symbol img { width: 27px; height: 27px; object-fit: contain; }
+    .legend-square { width: 17px; height: 17px; border: 1px solid #e2e8f0; border-radius: 4px; flex: 0 0 17px; }
+    .legend-line { width: 24px; height: 0; border-top: 3px solid; flex: 0 0 24px; }
+    #log-eventos { color: #cbd5e1; font-size: .84rem; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
+
+    .config-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .config-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+    .btn-submit { background: #0369a1; border-color: #0284c7; }
+    .btn-submit:hover { background: #075985; }
+
+    .notice { color: var(--muted); font-size: .82rem; line-height: 1.55; }
+    #mensaje-api { min-height: 1.3em; font-size: .85rem; color: var(--cyan); }
+    .footer { text-align: center; color: #64748b; font-size: .78rem; padding: 5px 0; }
+
+    @media (max-width: 1000px) {
+      .map-layout { grid-template-columns: 1fr; }
+      .side-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main class="dashboard">
+    <header class="header">
+      <div>
+        <div class="eyebrow">SIMULADOR DE SUPERVIVENCIA URBANA</div>
+        <h1>Apocalipsis Manta</h1>
+        <p class="subtitle">Explora escenarios, rutas de evacuación y eventos urbanos en una simulación interactiva.</p>
+      </div>
+      <div class="status-card">
+        <div class="small">ESCENARIO ACTUAL</div>
+        <h2 id="titulo-ronda" style="margin-top:8px">Ronda 2</h2>
+        <p id="lbl-estado">Turno: 0 | PAUSADO</p>
+      </div>
+    </header>
+
+    <section class="metrics">
+      <article class="metric"><div class="metric-label cyan">SUPERVIVIENTES</div><div class="metric-value cyan" id="valor-vivos">—</div><div class="metric-note">En las calles</div></article>
+      <article class="metric"><div class="metric-label green">RESCATADOS</div><div class="metric-value green" id="valor-rescatados">—</div><div class="metric-note">Llegaron a refugios</div></article>
+      <article class="metric"><div class="metric-label red">MORDIDOS</div><div class="metric-value red" id="valor-mordidos">—</div><div class="metric-note">Bajas por mordida</div></article>
+      <article class="metric"><div class="metric-label yellow">LATENCIA P95</div><div class="metric-value yellow" id="valor-latencia">—</div><div class="metric-note">Milisegundos</div></article>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <h2>Mapa de simulación táctica</h2>
+        <p>El grafo vial y las entidades de la simulación se conservan al cambiar el estilo del mapa base.</p>
+      </div>
+      <div class="map-layout">
+
+        <!-- Contenedor estricto para embeber mapa.html -->
+        <div class="panel map-card">
+          <iframe id="iframe-mapa" src="mapa.html" style="width:100%; height:665px; border:none; display:block;"></iframe>
+        </div>
+
+        <aside class="side-panels">
+          <div class="panel">
+            <h3>Leyenda</h3>
+            <div class="legend-list">
+              <div class="legend-row"><span class="legend-symbol"><img src="./imagenes/caminante.png" alt=""></span> Caminante</div>
+              <div class="legend-row"><span class="legend-symbol"><img src="./imagenes/corredor.png" alt=""></span> Corredor</div>
+              <div class="legend-row"><span class="legend-symbol"><img src="./imagenes/horda.png" alt=""></span> Horda</div>
+              <div class="legend-row"><span class="legend-symbol"><img src="./imagenes/sobreviviente.png" alt=""></span> Superviviente</div>
+              <div class="legend-row"><span class="legend-symbol"><img src="./imagenes/mordido.png" alt=""></span> Mordido</div>
+              <div class="legend-row"><span class="legend-symbol"><img src="./imagenes/refugio.png" alt=""></span> Refugio</div>
+              <div class="legend-row"><span class="legend-symbol"><img src="./imagenes/refugio%20lleno.png" alt=""></span> Refugio lleno</div>
+              <div class="legend-row"><span class="legend-line" style="border-color:#00ffcc"></span> Ruta de superviviente</div>
+              <div class="legend-row"><span class="legend-line" style="border-color:#ef4444;border-top-style:dashed"></span> Calle bloqueada</div>
+              <div class="legend-row"><span class="legend-square" style="background:#a855f7"></span> Zona de horda</div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Eventos de ciudad</h3>
+            <div id="log-eventos">Esperando datos de la API…</div>
+          </div>
+          <div class="panel">
+            <h3>Estado de conexión</h3>
+            <p id="estado-conexion" class="notice">Conectando con la API…</p>
+            <p class="notice">API configurada: <code id="api-direccion"></code></p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="panel" id="configuracion">
+      <h2>Crear simulación personalizada</h2>
+      <p class="notice">Configura las cantidades iniciales y un evento opcional. Al enviarlo, se reinicia el estado global actual del motor.</p>
+      <form id="form-personalizada">
+        <div class="config-grid">
+          <div class="field"><label>Supervivientes</label><input id="cfg-sobrevivientes" type="number" min="1" value="80" required></div>
+          <div class="field"><label>Caminantes</label><input id="cfg-caminantes" type="number" min="0" value="20" required></div>
+          <div class="field"><label>Corredores</label><input id="cfg-corredores" type="number" min="0" value="8" required></div>
+          <div class="field"><label>Hordas</label><input id="cfg-hordas" type="number" min="0" value="3" required></div>
+          <div class="field"><label>Zombis dormidos</label><input id="cfg-dormidos" type="number" min="0" value="0" required></div>
+          <div class="field"><label>Semilla aleatoria</label><input id="cfg-semilla" type="number" min="0" value="111" required></div>
+          <div class="field"><label>Turno del evento</label><input id="cfg-turno-evento" type="number" min="0" value="0" required></div>
+          <div class="field">
+            <label>Tipo de evento</label>
+            <select id="cfg-tipo-evento"><option value="puente">Colapso de puente</option><option value="calle">Bloqueo de calle</option></select>
+          </div>
+        </div>
+        <div class="config-footer">
+          <button class="btn-submit" id="btn-crear-simulacion" type="submit">Crear y ejecutar escenario</button>
+          <span id="mensaje-api"></span>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const API_URL = "window.location.origin;";
+    document.getElementById("api-direccion").textContent = API_URL;
+
+    // Lógica para comunicarse con el mapa del Iframe cuando envías el formulario
+    document.getElementById("form-personalizada").addEventListener("submit", async event => {
+      event.preventDefault();
+      const frame = document.getElementById("iframe-mapa").contentWindow;
+      frame.pausar(); frame.estadoTerminado = false;
+
+      const boton = document.getElementById("btn-crear-simulacion"), mensaje = document.getElementById("mensaje-api");
+      boton.disabled = true; mensaje.textContent = "Creando escenario…";
+
+      const payload = {
+        sobrevivientes: Number(document.getElementById("cfg-sobrevivientes").value),
+        caminantes: Number(document.getElementById("cfg-caminantes").value),
+        corredores: Number(document.getElementById("cfg-corredores").value),
+        hordas: Number(document.getElementById("cfg-hordas").value),
+        dormidos: Number(document.getElementById("cfg-dormidos").value),
+        semilla: Number(document.getElementById("cfg-semilla").value),
+        turno_evento: Number(document.getElementById("cfg-turno-evento").value),
+        tipo_evento: document.getElementById("cfg-tipo-evento").value
+      };
+
+      try {
+        frame.ultimaConfiguracionPersonalizada = payload;
+        await fetch(`${API_URL}/simulacion-personalizada`, { method: "POST", headers: { "Content-Type": "application/json","x-api-key": "clave-desarrollo-local" }, body: JSON.stringify(payload) });
+        frame.rondaActual = "personalizada";
+        document.getElementById("titulo-ronda").textContent = "Escenario personalizado";
+        frame.document.querySelectorAll(".btn-round").forEach(b => b.classList.remove("active"));
+        await frame.actualizarEstado();
+        mensaje.textContent = "Escenario personalizado creado. Pulsa Play en el mapa.";
+      } catch (error) {
+        console.error(error); mensaje.textContent = "Error al crear escenario.";
+      } finally {
+        boton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

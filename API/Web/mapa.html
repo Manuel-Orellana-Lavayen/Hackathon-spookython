@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mapa Interactivo</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 0; font-family: Inter, sans-serif; background: #050b14; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    button, select { font: inherit; }
+    button { background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 9px; padding: 10px 13px; cursor: pointer; font-weight: 600; transition: background .15s; }
+    button:hover { background: #334155; }
+    select { background: #0f172a; color: #f8fafc; border: 1px solid #334155; border-radius: 8px; padding: 10px 11px; cursor: pointer; }
+
+    .map-toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 13px 15px; background: #0b1220; border-bottom: 1px solid #293548; flex-shrink: 0;
+    }
+    .map-toolbar .left, .map-toolbar .right { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .map-toolbar label { color: #cbd5e1; font-size: .88rem; }
+
+    /* EL MAPA OCUPA TODO EL RESTO DEL ESPACIO. CONTROLES ABSOLUTOS RESTRINGIDOS AQUÍ */
+    .map-wrapper { position: relative; flex-grow: 1; width: 100%; min-height: 0; }
+    #map { width: 100%; height: 100%; background: #050b14; }
+
+    #bottombar {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 1000; padding: 10px 16px; display: flex; align-items: center; gap: 8px;
+      background: rgba(9, 14, 26, 0.92); border: 1px solid rgba(56, 189, 248, 0.32);
+      border-radius: 10px; backdrop-filter: blur(10px); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.65);
+    }
+    #bottombar button { padding: 7px 12px; border-radius: 7px; font-weight: 700; font-size: 12px; }
+    #bottombar button:hover { border-color: #38bdf8; }
+    #bottombar .btn-play { background: #22c55e; color: #052e16; border-color: #4ade80; font-size: 13px; padding: 8px 16px; }
+    #bottombar .btn-play.activo { background: #f59e0b; color: #1e1b4b; border-color: #fde047; }
+    #bottombar .btn-round { border-color: #38bdf8; color: #38bdf8; }
+    #bottombar .btn-round:hover, #bottombar .btn-round.active { background: #38bdf8; color: #0f172a; }
+    #bottombar .sep { width: 1px; height: 26px; background: rgba(148, 163, 184, 0.25); margin: 0 3px; }
+
+    .icono-zombie { background: transparent; border: 0; }
+    .texto-refugio { background: rgba(15, 23, 42, .94); color: white; border: 1px solid #cbd5e1; border-radius: 5px; padding: 3px 5px; font-weight: 700; font-size: 11px; margin-top: 7px; white-space: nowrap; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <div class="map-toolbar">
+    <div class="left">
+      <label for="estilo-mapa">Estilo de Visión:</label>
+      <select id="estilo-mapa">
+        <option value="estandar">Estándar (OSM)</option>
+        <option value="satelite">Satélite (Esri)</option>
+      </select>
+    </div>
+    <div class="right">
+      <button type="button" id="btn-centrar">Centrar</button>
+    </div>
+  </div>
+
+  <div class="map-wrapper">
+    <div id="map" aria-label="Mapa de la simulación"></div>
+    <div id="bottombar">
+        <button id="btn-play" class="btn-play" type="button">▶ Play</button>
+        <button id="btn-avanzar" type="button">⏭ +1 Turno</button>
+        <button id="btn-reiniciar" type="button">↺ Reiniciar</button>
+        <div class="sep"></div>
+        <button class="btn-round" data-ronda="1" type="button">R1</button>
+        <button class="btn-round active" data-ronda="2" type="button">R2</button>
+        <button class="btn-round" data-ronda="3" type="button">R3</button>
+        <div class="sep"></div>
+        <span style="font-size:11px; color:#94a3b8;">Vel: <strong id="lbl-velocidad">2000</strong>ms</span>
+        <button id="btn-mas-rapido" type="button">+</button>
+        <button id="btn-mas-lento" type="button">-</button>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "window.location.origin;";
+    const API_KEY = "clave-desarrollo-local";
+    // Función auxiliar para actualizar elementos en el Dashboard padre ("inicio.html")
+    function getDashEl(id) { return window.parent.document.getElementById(id); }
+
+    const limitesGenerosos = [[-0.975, -80.760], [-0.930, -80.700]];
+    const map = L.map("map", { zoomControl: true, minZoom: 16, maxZoom: 19, maxBounds: limitesGenerosos, maxBoundsViscosity: 0.8 }).setView([-0.953, -80.731], 16);
+
+    const mapasBase = {
+      estandar: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }),
+      satelite: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: 16, maxZoom: 20 }),
+    };
+
+    let mapaBaseActual = mapasBase.estandar.addTo(map);
+    const layerZonasHorda = L.layerGroup().addTo(map), layerCalles = L.layerGroup().addTo(map), layerBloqueos = L.layerGroup().addTo(map), layerRutas = L.layerGroup().addTo(map), layerMarcadores = L.layerGroup().addTo(map);
+
+    var limitesGrafo = null, pausado = true, rondaActual = "2", velocidadMs = 2000, timer = null, peticionTurnoEnCurso = false, estadoTerminado = false, ultimaConfiguracionPersonalizada = null;
+
+    function crearIcono(ruta, tamano = 30) { return L.icon({ iconUrl: ruta, iconSize: [tamano, tamano], iconAnchor: [tamano/2, tamano/2], className: "icono-zombie" }); }
+    const diccIconos = {
+      caminante: crearIcono("./imagenes/caminante.png", 28), corredor: crearIcono("./imagenes/corredor.png", 32),
+      sobreviviente: crearIcono("./imagenes/sobreviviente.png", 27),horda: crearIcono("./imagenes/horda.png", 36), mordido: crearIcono("./imagenes/mordido.png", 28)
+    };
+
+    async function respuestaJson(url, opciones = {}) {
+      // Inyectar automáticamente la API Key y el Content-Type en cada petición
+      opciones.headers = {
+        "Content-Type": "application/json",
+        "x-api-key": API_KEY,
+        ...opciones.headers
+      };
+
+      const respuesta = await fetch(url, opciones);
+      if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
+      return respuesta.json();
+    }
+
+    async function cargarGrafo() {
+      const data = await respuestaJson(`${API_URL}/grafo`); const puntos = [];
+      data.calles.forEach(c => {
+        const inicio = [c.lat1, c.lng1], fin = [c.lat2, c.lng2]; puntos.push(inicio, fin);
+        let color = "#475569", weight = 1.3, opacity = 0.85;
+        if (c.tipo === "puente") { color = "#38bdf8"; weight = 2.8; opacity = 0.95; } else if (c.tipo === "avenida") { color = "#94a3b8"; weight = 2.1; opacity = 0.9; }
+        L.polyline([inicio, fin], { color, weight, opacity, interactive: false }).addTo(layerCalles);
+      });
+      if (puntos.length) { limitesGrafo = L.latLngBounds(puntos); map.fitBounds(limitesGrafo, { padding: [28, 28], animate: false }); }
+    }
+
+    function actualizarMetricas(estado) {
+      if(!getDashEl("valor-vivos")) return;
+      const metricas = estado.metricas || {};
+      getDashEl("valor-vivos").textContent = metricas.activos ?? 0;
+      getDashEl("valor-rescatados").textContent = metricas.rescatados ?? 0;
+      getDashEl("valor-mordidos").textContent = metricas.mordidos ?? 0;
+      getDashEl("valor-latencia").textContent = metricas.latencia_p95_ms == null ? "—" : `${metricas.latencia_p95_ms} ms`;
+      const color = pausado ? "#f87171" : "#4ade80";
+      getDashEl("lbl-estado").innerHTML = `Turno: ${estado.turno ?? 0} | <span style="color:${color}">${pausado ? "PAUSADO" : "EN VIVO"}</span>`;
+      const eventos = Array.isArray(estado.eventos_log) ? estado.eventos_log : [];
+      getDashEl("log-eventos").textContent = eventos.length ? eventos.join("\n") : "Sin eventos registrados.";
+    }
+
+    function dibujarEstado(estado) {
+      layerZonasHorda.clearLayers(); layerBloqueos.clearLayers(); layerRutas.clearLayers(); layerMarcadores.clearLayers();
+      (estado.zonas_horda || []).forEach(coord => L.circle([coord.lat, coord.lng], { radius: 25, color: "#a855f7", weight: 1, fillColor: "#a855f7", fillOpacity: 0.18, interactive: false }).addTo(layerZonasHorda));
+      (estado.bloqueos_coords || []).forEach(coords => L.polyline(coords, { color: "#ef4444", weight: 4, dashArray: "5, 5", interactive: false }).addTo(layerBloqueos));
+      (estado.sobrevivientes || []).forEach(s => { if (Array.isArray(s.ruta) && s.ruta.length > 1) L.polyline(s.ruta, { color: "#00ffcc", weight: 1.6, opacity: 0.42, interactive: false }).addTo(layerRutas); });
+      (estado.refugios || []).forEach(r => {
+        //const color = r.ocupacion < r.capacidad ? "#22c55e" : "#eab308";
+          const urlImagen = r.ocupacion < r.capacidad ? "./imagenes/refugio.png" : "./imagenes/refugio%20lleno.png";
+        const icono = L.divIcon({
+          html: `
+            <div style="display: flex; flex-direction: column; align-items: center;">
+              <img src="${urlImagen}" style="width: 32px; height: 32px; object-fit: contain;">
+              <div class="texto-refugio">${String(r.id)}<br>(${r.ocupacion}/${r.capacidad})</div>
+            </div>`,
+          className: "",
+          iconSize: [80, 65],
+          iconAnchor: [40, 32]
+        });
+
+        L.marker([r.lat, r.lng], { icon: icono, interactive: false }).addTo(layerMarcadores);
+      });
+      (estado.zombies || []).forEach(z => L.marker([z.lat, z.lng], { icon: diccIconos[z.tipo] || diccIconos.caminante, interactive: false }).addTo(layerMarcadores));
+      (estado.sobrevivientes || []).forEach(s => L.marker([s.lat, s.lng], { icon: s.mordido ? diccIconos.mordido : diccIconos.sobreviviente, zIndexOffset: 1000, interactive: false }).addTo(layerMarcadores));
+    }
+
+    async function actualizarEstado() {
+      const estado = await respuestaJson(`${API_URL}/estado`);
+      actualizarMetricas(estado); dibujarEstado(estado);
+      if (estado.terminado) { estadoTerminado = true; pausar(); actualizarMetricas(estado); } else { estadoTerminado = false; }
+      mostrarConexion("API conectada correctamente."); return estado;
+    }
+
+    function pausar() {
+      pausado = true; if (timer !== null) { clearInterval(timer); timer = null; }
+      const boton = document.getElementById("btn-play");
+      boton.innerHTML = "▶ Play"; boton.classList.remove("activo");
+    }
+
+    function reproducir() {
+      if (estadoTerminado) { if(getDashEl("mensaje-api")) getDashEl("mensaje-api").textContent = "La simulación terminó."; return; }
+      if (!pausado) return;
+      pausado = false; const boton = document.getElementById("btn-play");
+      boton.innerHTML = "⏸ Pausar"; boton.classList.add("activo");
+      actualizarMetricas({ turno: getDashEl("lbl-estado")?.textContent.match(/Turno:\s*(\d+)/)?.[1] ?? 0 });
+      timer = setInterval(tick, velocidadMs);
+    }
+
+    function togglePlay() { if (pausado) reproducir(); else { pausar(); actualizarEstado().catch(mostrarError); } }
+    function mostrarError(error) { console.error(error); mostrarConexion("Error al comunicarse con la API.", true); }
+    function mostrarConexion(texto, esError = false) {
+  const el = getDashEl("estado-conexion");
+      if (!el) return;
+      el.textContent = texto;
+      el.style.color = esError ? "#f87171" : "#4ade80";
+    }
+
+   async function tick() {
+      if (pausado || peticionTurnoEnCurso || estadoTerminado) return;
+      peticionTurnoEnCurso = true;
+      try {
+          // Guardamos directamente la respuesta del POST sin hacer una segunda llamada GET
+          const estado = await respuestaJson(`${API_URL}/avanzar`, { method: "POST" });
+          actualizarMetricas(estado);
+          dibujarEstado(estado);
+          if (estado.terminado) { estadoTerminado = true; pausar(); actualizarMetricas(estado); } else { estadoTerminado = false; }
+      }
+      catch (error) { pausar(); mostrarError(error); } finally { peticionTurnoEnCurso = false; }
+    }
+
+    async function avanzarTurnoManual() {
+      if (!pausado || peticionTurnoEnCurso || estadoTerminado) return;
+      peticionTurnoEnCurso = true;
+      try {
+          const estado = await respuestaJson(`${API_URL}/avanzar`, { method: "POST" });
+          actualizarMetricas(estado);
+          dibujarEstado(estado);
+          if (estado.terminado) { estadoTerminado = true; pausar(); actualizarMetricas(estado); } else { estadoTerminado = false; }
+      }
+      catch (error) { mostrarError(error); } finally { peticionTurnoEnCurso = false; }
+    }
+
+    async function reiniciarEscenarioActual() {
+      if (rondaActual !== "personalizada" || !ultimaConfiguracionPersonalizada) { await cargarRonda(rondaActual === "personalizada" ? "2" : rondaActual); return; }
+      pausar(); estadoTerminado = false;
+      try {
+        await respuestaJson(`${API_URL}/simulacion-personalizada`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ultimaConfiguracionPersonalizada) });
+        await actualizarEstado();
+      } catch (error) { mostrarError(error); }
+    }
+
+    async function cargarRonda(ronda) {
+      pausar(); rondaActual = String(ronda); estadoTerminado = false;
+      if(getDashEl("titulo-ronda")) getDashEl("titulo-ronda").textContent = `Ronda ${rondaActual}`;
+      document.querySelectorAll(".btn-round").forEach(b => b.classList.toggle("active", b.dataset.ronda === rondaActual));
+      try { await respuestaJson(`${API_URL}/iniciar/${encodeURIComponent(rondaActual)}`, { method: "POST" }); await actualizarEstado(); } catch (error) { mostrarError(error); }
+    }
+
+    function ajustarVelocidad(cambio) {
+      velocidadMs = Math.max(100, Math.min(2000, velocidadMs + cambio)); document.getElementById("lbl-velocidad").textContent = velocidadMs;
+      if (!pausado) { clearInterval(timer); timer = setInterval(tick, velocidadMs); }
+    }
+
+    document.getElementById("estilo-mapa").addEventListener("change", e => {
+      const nuevaCapa = mapasBase[e.target.value];
+      if (!nuevaCapa || nuevaCapa === mapaBaseActual) return;
+      map.removeLayer(mapaBaseActual); mapaBaseActual = nuevaCapa; mapaBaseActual.addTo(map);
+    });
+
+    document.getElementById("btn-centrar").addEventListener("click", () => {
+      if (limitesGrafo) map.fitBounds(limitesGrafo, { padding: [28, 28], maxZoom: 17, animate: true });
+    });
+
+    document.getElementById("btn-play").addEventListener("click", togglePlay);
+    document.getElementById("btn-avanzar").addEventListener("click", avanzarTurnoManual);
+    document.getElementById("btn-reiniciar").addEventListener("click", reiniciarEscenarioActual);
+    document.getElementById("btn-mas-rapido").addEventListener("click", () => ajustarVelocidad(-150));
+    document.getElementById("btn-mas-lento").addEventListener("click", () => ajustarVelocidad(150));
+    document.querySelectorAll(".btn-round").forEach(b => b.addEventListener("click", () => cargarRonda(b.dataset.ronda)));
+
+    async function iniciarInterfaz() {
+      try { await cargarGrafo(); await cargarRonda("2"); } catch (error) { mostrarError(error); }
+    }
+    iniciarInterfaz();
+  </script>
+</body>
+</html>
